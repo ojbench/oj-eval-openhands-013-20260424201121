@@ -341,56 +341,67 @@ template<
    }
 
    pair<iterator, bool> insert(const value_type &value) {
-       Node *p = findNode(value.first);
-       if (p) return pair<iterator, bool>(iterator(p, this), false);
+       Node *p = (header->parent == header ? nullptr : header->parent);
+       Node *pa = header;
+       while (p) {
+           if (compare(value.first, p->data->first)) {
+               pa = p;
+               p = p->left;
+           } else if (compare(p->data->first, value.first)) {
+               pa = p;
+               p = p->right;
+           } else {
+               return pair<iterator, bool>(iterator(p, this), false);
+           }
+       }
        _size++;
-       Node *root = (header->parent == header ? nullptr : header->parent);
-       Node *newNode = insert(root, header, value);
-       header->parent = root;
+       Node *newNode = new Node(value);
+       newNode->parent = pa;
+       if (pa == header) header->parent = newNode;
+       else if (compare(value.first, pa->data->first)) pa->left = newNode;
+       else pa->right = newNode;
+       
+       p = newNode;
+       while (p != header) {
+           updateHeight(p);
+           Node *parent = p->parent;
+           int b = getBalance(p);
+           if (b > 1 || b < -1) {
+               Node *&ref = (parent == header ? header->parent : (parent->left == p ? parent->left : parent->right));
+               balance(ref);
+               break;
+           }
+           p = parent;
+       }
        return pair<iterator, bool>(iterator(newNode, this), true);
    }
-
-   Node* insert(Node *&p, Node *pa, const value_type &value) {
-       if (!p) {
-           p = new Node(value);
-           p->parent = pa;
-           return p;
-       }
-       Node *res;
-       if (compare(value.first, p->data->first)) res = insert(p->left, p, value);
-       else res = insert(p->right, p, value);
-       balance(p);
-       return res;
-   }
-
    void erase(iterator pos) {
        if (pos.m != this || pos.ptr == header || !pos.ptr) throw invalid_iterator();
        _size--;
-       Node *root = (header->parent == header ? nullptr : header->parent);
-       erase(root, pos.ptr->data->first);
-       header->parent = (root == nullptr ? header : root);
-   }
-
-   void erase(Node *&p, const Key &key) {
-       if (!p) return;
-       if (compare(key, p->data->first)) erase(p->left, key);
-       else if (compare(p->data->first, key)) erase(p->right, key);
-       else {
-           if (p->left && p->right) {
-               Node *tmp = p->right;
-               while (tmp->left) tmp = tmp->left;
-               
-               p->data->~value_type();
-               new(p->data) value_type(*(tmp->data));
-               erase(p->right, tmp->data->first);
-           } else {
-               Node *old = p;
-               p = (p->left ? p->left : p->right);
-               if (p) p->parent = old->parent;
-               delete old;
-           }
+       Node *p = pos.ptr;
+       if (p->left && p->right) {
+           Node *tmp = p->right;
+           while (tmp->left) tmp = tmp->left;
+           p->data->~value_type();
+           new(p->data) value_type(*(tmp->data));
+           p = tmp;
        }
-       balance(p);
+       Node *pa = p->parent;
+       Node *child = (p->left ? p->left : p->right);
+       if (pa == header) header->parent = child;
+       else if (pa->left == p) pa->left = child;
+       else pa->right = child;
+       if (child) child->parent = pa;
+       delete p;
+       
+       p = pa;
+       while (p != header) {
+           updateHeight(p);
+           Node *parent = p->parent;
+           Node *&ref = (parent == header ? header->parent : (parent->left == p ? parent->left : parent->right));
+           balance(ref);
+           p = parent;
+       }
    }
 
    size_t count(const Key &key) const {
